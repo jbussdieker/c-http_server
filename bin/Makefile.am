@@ -1,3 +1,3 @@
 ACLOCAL_AMFLAGS = -I m4
-bin_PROGRAMS = hello
-hello_SOURCES = hello.c
+bin_PROGRAMS = server
+server_SOURCES = server.c
