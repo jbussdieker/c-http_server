@@ -10,10 +10,18 @@
 
 #define PORT 5000
 
-int listenfd;
+///////////////////////////////////////////////////////////////////////////////
+// Function prototypes
+///////////////////////////////////////////////////////////////////////////////
+int start_server(int port);
+void start_acceptor(int listen_socket);
+void server(struct sockaddr_in client_addr, int connfd);
 
+///////////////////////////////////////////////////////////////////////////////
+// Private functions
+///////////////////////////////////////////////////////////////////////////////
 void print_error(char *msg, int num) {
-  printf(msg);
+  printf("%s", msg);
   switch (num) {
     case EADDRINUSE:
       printf(" (Address in use)\n");
@@ -24,43 +32,30 @@ void print_error(char *msg, int num) {
   }
 }
 
-void server(int connfd) {
-  char buffer[255];
-  //printf(" * [%d] Connection\n", connfd);
-  int read_size = read(connfd, buffer, 255);
-  //printf("%.*s\n", read_size, buffer);
-
-  char *resp = "HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\n";
-  int written = send(connfd, resp, strlen(resp), 0);
-
-  //printf("%.*s\n", written, resp);
-
-  //printf(" * [%d] Connection Write %d\n", connfd, written);
-  int result = close(connfd);
-  if (result != 0) {
-    printf("Error closing (%d)\n", result);
-  }
-
-  //printf(" * [%d] Connection Closed\n", connfd);
+void print_addr(struct sockaddr_in *addr) {
+  char str[INET_ADDRSTRLEN];
+  inet_ntop(addr->sin_family, &(addr->sin_addr), str, INET_ADDRSTRLEN);
+  printf("%s:%d\n", str, addr->sin_port);
 }
 
-void sig_handler(int signo)
-{
-  if (signo == SIGINT) {
-    printf("Shutting down..\n");
-    close(listenfd);
-    exit(0);
-  }
-}
-
+///////////////////////////////////////////////////////////////////////////////
+// Public functions
+///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char **argv) {
+  int listenfd;
+
+  listenfd = start_server(PORT);
+  start_acceptor(listenfd);
+
+  return 0;
+}
+
+int start_server(int port) {
   int result;
+  int listenfd;
   struct sockaddr_in src_addr;
 
   printf("Starting Server...\n");
-
-  if (signal(SIGINT, sig_handler) == SIG_ERR)
-    printf("\ncan't catch SIGINT\n");
 
   listenfd = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -68,7 +63,7 @@ int main(int argc, char **argv) {
 
   src_addr.sin_family = AF_INET;
   src_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-  src_addr.sin_port = htons(PORT); 
+  src_addr.sin_port = htons(port); 
 
   result = bind(listenfd, (struct sockaddr*)&src_addr, sizeof(src_addr));
   if (result != 0) {
@@ -82,28 +77,59 @@ int main(int argc, char **argv) {
     exit(1);
   }
 
-  printf("Listening on port %d...\n", PORT);
+  printf("Listening on port %d...\n", port);
+
+  return listenfd;
+}
+
+void start_acceptor(int listenfd) {
+  struct sockaddr_in client_addr;
+  int client_addr_len = sizeof(client_addr);
+  int connfd;
+  int pid;
 
   while(1) {
-    int connfd;
-    connfd = accept(listenfd, (struct sockaddr *)NULL, NULL);
-    int pid = fork();
+    connfd = accept(listenfd, (struct sockaddr *)&client_addr, &client_addr_len);
+    pid = fork();
+
+    // Error
     if (pid < 0) {
       printf("ERROR?\n");
-      break;
+      exit(1);
     }
     // The child
     if (pid == 0) {
-      server(connfd);
-      exit(1);
+      close(listenfd);
+      server(client_addr, connfd);
+      exit(0);
     }
     // The parent
     if (pid > 0) {
-      //int x;
-      //waitpid(-1,&x,WNOHANG);
       close(connfd);
     }
   }
-
-  return 0;
 }
+
+void server(struct sockaddr_in client_addr, int connfd) {
+  char buffer[255];
+  int read_size, written;
+  char *resp;
+
+  print_addr(&client_addr);
+
+  read_size = recv(connfd, buffer, 255, 0);
+
+  resp = "HTTP/1.0 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK";
+
+  written = send(connfd, resp, strlen(resp), 0);
+
+  if (written != strlen(resp)) {
+    printf("Error writing\n");
+  }
+
+  /*int result = close(connfd);
+  if (result != 0) {
+    printf("Error closing (%d)\n", result);
+  }*/
+}
+
