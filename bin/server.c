@@ -25,7 +25,8 @@ struct worker_arg_struct {
 ///////////////////////////////////////////////////////////////////////////////
 int start_server(int port);
 void start_fork_acceptor(int listen_socket);
-void server(void *arguments);
+void start_thread_acceptor(int listen_socket);
+void *server(void *arguments);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Private functions
@@ -131,7 +132,7 @@ void start_fork_acceptor(int listenfd) {
   }
 }
 
-void server(void *arguments) {
+void *server(void *arguments) {
   char buffer[255];
   int read_size, written;
   char *resp;
@@ -153,5 +154,7 @@ void server(void *arguments) {
   if (result != 0) {
     printf("Error closing (%d)\n", result);
   }
+
+  return 0;
 }
 
