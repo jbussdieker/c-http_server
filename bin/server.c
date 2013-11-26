@@ -7,15 +7,25 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <pthread.h>
 
 #define PORT 5000
+
+
+///////////////////////////////////////////////////////////////////////////////
+// Data structures
+///////////////////////////////////////////////////////////////////////////////
+struct worker_arg_struct {
+  struct sockaddr_in client_addr; 
+  int connfd;
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 // Function prototypes
 ///////////////////////////////////////////////////////////////////////////////
 int start_server(int port);
-void start_acceptor(int listen_socket);
-void server(struct sockaddr_in client_addr, int connfd);
+void start_fork_acceptor(int listen_socket);
+void server(void *arguments);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Private functions
@@ -45,7 +55,7 @@ int main(int argc, char **argv) {
   int listenfd;
 
   listenfd = start_server(PORT);
-  start_acceptor(listenfd);
+  start_thread_acceptor(listenfd);
 
   return 0;
 }
@@ -82,14 +92,25 @@ int start_server(int port) {
   return listenfd;
 }
 
-void start_acceptor(int listenfd) {
-  struct sockaddr_in client_addr;
-  int client_addr_len = sizeof(client_addr);
-  int connfd;
+void start_thread_acceptor(int listenfd) {
+  struct worker_arg_struct args;
+  int client_addr_len = sizeof(args.client_addr);
+  pthread_t child;
+
+  while(1) {
+    args.connfd = accept(listenfd, (struct sockaddr *)&args.client_addr, &client_addr_len);
+    pthread_create(&child, 0, server, (void *)&args);
+    pthread_detach(child);
+  }
+}
+
+void start_fork_acceptor(int listenfd) {
+  struct worker_arg_struct args;
+  int client_addr_len = sizeof(args.client_addr);
   int pid;
 
   while(1) {
-    connfd = accept(listenfd, (struct sockaddr *)&client_addr, &client_addr_len);
+    args.connfd = accept(listenfd, (struct sockaddr *)&args.client_addr, &client_addr_len);
     pid = fork();
 
     // Error
@@ -100,36 +121,37 @@ void start_acceptor(int listenfd) {
     // The child
     if (pid == 0) {
       close(listenfd);
-      server(client_addr, connfd);
+      server(&args);
       exit(0);
     }
     // The parent
     if (pid > 0) {
-      close(connfd);
+      close(args.connfd);
     }
   }
 }
 
-void server(struct sockaddr_in client_addr, int connfd) {
+void server(void *arguments) {
   char buffer[255];
   int read_size, written;
   char *resp;
+  struct worker_arg_struct *args = arguments;
 
-  print_addr(&client_addr);
+  print_addr(&args->client_addr);
 
-  read_size = recv(connfd, buffer, 255, 0);
+  read_size = recv(args->connfd, buffer, 255, 0);
 
   resp = "HTTP/1.0 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK";
 
-  written = send(connfd, resp, strlen(resp), 0);
+  written = send(args->connfd, resp, strlen(resp), 0);
 
   if (written != strlen(resp)) {
     printf("Error writing\n");
   }
 
-  /*int result = close(connfd);
+  int result = close(args->connfd);
   if (result != 0) {
     printf("Error closing (%d)\n", result);
-  }*/
+  }
 }
 
